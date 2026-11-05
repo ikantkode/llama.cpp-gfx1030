@@ -81,6 +81,7 @@ float ggml_table_f32_f16[1 << 16];
 
 // precomputed f32 table for e8m0 half (1 KB) (simd-mappings.h)
 float ggml_table_f32_e8m0_half[1 << 8];
+float ggml_table_f32_f8_e4m3[1 << 8];
 
 // precomputed f32 table for ue4m3 (1 KB) (simd-mappings.h)
 float ggml_table_f32_ue4m3[1 << 8];
@@ -3919,6 +3920,11 @@ void ggml_cpu_init(void) {
             // initialize E8M0 half table (256 entries)
             for (int i = 0; i < (1 << 8); ++i) {
                 ggml_table_f32_e8m0_half[i] = GGML_E8M0_TO_FP32_HALF(i);
+            }
+
+            // initialize f8 e4m3 table (256 entries, upstream)
+            for (int i = 0; i < (1 << 8); ++i) {
+                ggml_table_f32_f8_e4m3[i] = ggml_f8_e4m3_to_fp32(i);
             }
 
             // initialize UE4M3 table (256 entries)
