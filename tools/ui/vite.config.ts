@@ -17,18 +17,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const browserBaseConfig: any = {
 	enabled: true,
 	instances: [{ browser: 'chromium' }],
-	// CI runs the bundled Chromium without its sandbox, which the runners can't start;
-	// locally, the installed (auto-updated) Chrome with its sandbox on, see playwright.config.ts
 	provider: playwright({
-		launchOptions: process.env.CI
-			? { args: ['--no-sandbox'] }
-			: { channel: 'chrome', chromiumSandbox: true }
+		launchOptions: {
+			args: ['--no-sandbox']
+		}
 	})
 };
 
 export default defineConfig(({ mode }) => {
 	const env = loadEnv(mode, process.cwd(), 'VITE_PUBLIC_');
-	const SERVER_ORIGIN = env.VITE_PUBLIC_SERVER_ORIGIN || 'http://localhost:9931';
+	const SERVER_ORIGIN = env.VITE_PUBLIC_SERVER_ORIGIN || 'http://localhost:8080';
 
 	return {
 		build: {

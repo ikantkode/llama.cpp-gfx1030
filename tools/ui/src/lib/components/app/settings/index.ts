@@ -35,16 +35,11 @@ export { default as SettingsChatParameterSourceIndicator } from './SettingsChat/
 export { default as SettingsGroup } from './SettingsGroup.svelte';
 
 /**
- * Sticky footer with the save button for settings panel, shown only when
- * there are unsaved changes. Save commits form state to config store.
+ * Footer with save/cancel buttons for settings panel. Positioned at bottom
+ * of settings dialog. Save button commits form state to config store,
+ * cancel button triggers reset and close.
  */
 export { default as SettingsFooter } from './SettingsFooter.svelte';
-
-/**
- * "Reset to default" button with confirmation dialog, shown only when the
- * saved config differs from the defaults.
- */
-export { default as SettingsResetButton } from './SettingsResetButton.svelte';
 
 /**
  * Settings Import/Export panel.

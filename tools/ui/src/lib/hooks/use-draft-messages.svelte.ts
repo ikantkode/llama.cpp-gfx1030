@@ -8,6 +8,7 @@ interface UseDraftMessagesOptions {
 	getFiles: () => ChatUploadedFile[];
 	setMessage: (message: string) => void;
 	setFiles: (files: ChatUploadedFile[]) => void;
+	getInitialMessage: () => string;
 }
 
 export function useDraftMessages(options: UseDraftMessagesOptions) {
@@ -15,7 +16,7 @@ export function useDraftMessages(options: UseDraftMessagesOptions) {
 		const chatId = options.getChatId();
 		const draft = draftMessagesStore.getDraftMessage(chatId);
 
-		if (draft.message || draft.files.length > 0) {
+		if ((draft.message || draft.files.length > 0) && !options.getInitialMessage()) {
 			options.setMessage(draft.message);
 			options.setFiles(draft.files);
 		}

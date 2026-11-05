@@ -1,16 +1,16 @@
 <script lang="ts">
 	import ChatFormActionAddButton from './ChatFormActionAddButton.svelte';
-	import ChatFormActionAddDrawer from './ChatFormActionAddDrawer.svelte';
 	import ChatFormActionAddDropdown from './ChatFormActionAddDropdown.svelte';
+	import ChatFormActionAddSheet from './ChatFormActionAddSheet.svelte';
 	import { deviceStore } from '$lib/stores';
 </script>
 
 {#if deviceStore.isMobile}
-	<ChatFormActionAddDrawer>
+	<ChatFormActionAddSheet>
 		{#snippet trigger({ disabled, onclick })}
 			<ChatFormActionAddButton {disabled} {onclick} />
 		{/snippet}
-	</ChatFormActionAddDrawer>
+	</ChatFormActionAddSheet>
 {:else}
 	<ChatFormActionAddDropdown />
 {/if}

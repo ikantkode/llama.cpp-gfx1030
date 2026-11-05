@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common.h"
+
 #include <chrono>
 #include <exception>
 #include <iostream>
@@ -37,14 +39,7 @@ struct testing {
     }
 
     std::string full_name() const {
-        std::string name;
-        for (std::size_t i = 0; i < stack.size(); ++i) {
-            if (i != 0) {
-                name += ".";
-            }
-            name += stack[i];
-        }
-        return name;
+        return string_join(stack, ".");
     }
 
     void log(const std::string & msg) {

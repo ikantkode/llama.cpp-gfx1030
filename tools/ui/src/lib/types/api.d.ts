@@ -1,9 +1,7 @@
 import type { ChatMessagePromptProgress, ChatRole } from './chat';
-import type { ModelSidecar } from '$lib/constants';
 import type {
 	ContentPartType,
 	FileTypeAudio,
-	ServerModelSource,
 	ServerModelsSseEventType,
 	ServerModelStatus,
 	ServerRole
@@ -96,20 +94,12 @@ export interface ApiModelDataEntry {
 	path: string;
 	/** Current status of the model */
 	status: ApiModelStatus;
-	/** Where the router found the model: the HF cache, --models-dir or a preset */
-	source?: ServerModelSource;
-	/** Whether the router can delete the model's files (only cached models) */
-	can_remove?: boolean;
 	/** Alternative names that resolve to this model */
 	aliases?: string[];
 	/** Informational tags for this model */
 	tags?: string[];
 	/** Modality capabilities, reported by the router for every model regardless of load state */
 	architecture?: ApiModelArchitecture;
-	/** Trained context of the model, read from its GGUF metadata at registration */
-	context_length?: number;
-	/** Sidecar kinds a cached model or an unfinished download has on disk, as -hf resolves them */
-	sidecars?: ModelSidecar[];
 	/** Legacy meta field (may be present in older responses) */
 	meta?: Record<string, unknown> | null;
 }
@@ -149,14 +139,6 @@ export interface ApiModelsSseData {
 }
 
 /**
- * Per-file size snapshot reported by the download_progress SSE envelope.
- * Keys are file URLs, values are byte counters (done <= total).
- */
-export interface ApiModelsSseDownloadProgressData {
-	progress: Record<string, { done: number; total: number }>;
-}
-
-/**
  * Event kind multiplexed on the /models/sse feed.
  * Only the status_* events carry a status payload, models_reload signals a
  * full list refresh, model_remove drops a row, download_* drive download UI.
@@ -168,28 +150,7 @@ export interface ApiModelsSseDownloadProgressData {
 export interface ApiModelsSseEvent {
 	model: string;
 	event: ServerModelsSseEventType;
-	data?: ApiModelsSseData | ApiModelsSseDownloadProgressData;
-}
-
-/**
- * Request body for POST /models (model download).
- * `model` is a HuggingFace repo id, optionally suffixed with `:<tag>` to
- * pin a quantization or sidecar file (e.g. `ggml-org/gemma-3-4b-it-GGUF:Q4_K_M`).
- */
-export interface ApiModelsDownloadRequest {
-	model: string;
-	/** Sidecar kinds pulled with the model, picked by the server as -hf picks them */
-	sidecars: ModelSidecar[];
-}
-
-/**
- * Response from POST /models and DELETE /models. The POST endpoint returns
- * immediately; the download itself runs in the background and emits events
- * on /models/sse.
- */
-export interface ApiModelsDownloadResponse {
-	success: boolean;
-	error?: { code: number; message: string; type: string };
+	data: ApiModelsSseData;
 }
 
 export interface ApiModelDetails {
@@ -211,6 +172,12 @@ export interface ApiModelDetails {
 		parameter_size?: string;
 		quantization_level?: string;
 	};
+}
+
+export interface ApiModelListResponse {
+	object: string;
+	data: ApiModelDataEntry[];
+	models?: ApiModelDetails[];
 }
 
 export interface ApiLlamaCppServerProps {
@@ -289,10 +256,6 @@ export interface ApiLlamaCppServerProps {
 		video: boolean;
 	};
 	chat_template: string;
-	chat_template_caps?: {
-		/** reasoning_effort values the chat template renders distinctly, from lowest to highest */
-		reasoning_effort_levels?: string[];
-	};
 	bos_token: string;
 	eos_token: string;
 	build_info: string;
@@ -317,7 +280,6 @@ export interface ApiChatCompletionRequest {
 	tools?: ApiChatCompletionTool[];
 	// Reasoning parameters
 	reasoning_format?: string;
-	reasoning_effort?: string;
 	// Generation parameters
 	temperature?: number;
 	max_tokens?: number;
@@ -486,32 +448,79 @@ export interface ApiProcessingState {
 }
 
 /**
- * Response from POST /models/load
+ * Router model metadata - extended from ApiModelDataEntry with additional router-specific fields
+ * @deprecated Use ApiModelDataEntry instead - the /models endpoint returns this structure directly
  */
-export interface ApiModelsLoadResponse {
+export interface ApiRouterModelMeta {
+	/** Model identifier (e.g., "ggml-org/Qwen2.5-Omni-7B-GGUF:latest") */
+	name: string;
+	/** Path to model file or manifest */
+	path: string;
+	/** Optional path to multimodal projector */
+	path_mmproj?: string;
+	/** Whether model is in HuggingFace cache */
+	in_cache: boolean;
+	/** Port where model instance is running (0 if not loaded) */
+	port?: number;
+	/** Current status of the model */
+	status: ApiModelStatus;
+	/** Error message if status is FAILED */
+	error?: string;
+}
+
+/**
+ * Request to load a model
+ */
+export interface ApiRouterModelsLoadRequest {
+	model: string;
+}
+
+/**
+ * Response from loading a model
+ */
+export interface ApiRouterModelsLoadResponse {
 	success: boolean;
 	error?: string;
 }
 
 /**
- * Response with list of all models from /v1/models and /models endpoints
- * (same structure regardless of server mode)
+ * Request to check model status
  */
-export interface ApiModelsListResponse {
-	object: string;
-	data: ApiModelDataEntry[];
-	/**
-	 * Optional details aligned by index with `data`: `models[i]` describes
-	 * `data[i]`. The server fills both arrays in one pass, so the pairing only
-	 * holds while neither array is filtered independently.
-	 */
-	models?: ApiModelDetails[];
+export interface ApiRouterModelsStatusRequest {
+	model: string;
 }
 
 /**
- * Response from POST /models/unload
+ * Response with model status
  */
-export interface ApiModelsUnloadResponse {
+export interface ApiRouterModelsStatusResponse {
+	model: string;
+	status: ModelStatus;
+	port?: number;
+	error?: string;
+}
+
+/**
+ * Response with list of all models from /models endpoint
+ * Note: This is the same as ApiModelListResponse - the endpoint returns the same structure
+ * regardless of server mode (MODEL or ROUTER)
+ */
+export interface ApiRouterModelsListResponse {
+	object: string;
+	data: ApiModelDataEntry[];
+}
+
+/**
+ * Request to unload a model
+ */
+export interface ApiRouterModelsUnloadRequest {
+	model: string;
+}
+
+/**
+ * Response from unloading a model
+ */
+export interface ApiRouterModelsUnloadResponse {
 	success: boolean;
 	error?: string;
 }

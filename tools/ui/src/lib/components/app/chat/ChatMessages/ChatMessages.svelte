@@ -1,7 +1,5 @@
 <script lang="ts">
-	import LazyChatMessage from './LazyChatMessage.svelte';
-	import { ChatMessageUserPending } from '$lib/components/app';
-	import { LANDING_EAGER_ROWS } from '$lib/constants';
+	import { ChatMessage, ChatMessageUserPending } from '$lib/components/app';
 	import { MessageRole } from '$lib/enums';
 	import { agenticStore, chatStore, conversationsStore, settingsStore } from '$lib/stores';
 	import type { ChatMessageActions } from '$lib/types';
@@ -14,10 +12,11 @@
 
 	interface Props {
 		messages?: DatabaseMessage[];
+		onUserAction?: () => void;
 		onMessagesReady?: (messageCount: number) => void;
 	}
 
-	let { messages = [], onMessagesReady }: Props = $props();
+	let { messages = [], onMessagesReady, onUserAction }: Props = $props();
 
 	let allConversationMessages = $state<DatabaseMessage[]>([]);
 
@@ -25,14 +24,15 @@
 
 	const chatActions: ChatMessageActions = {
 		continueAssistantMessage: async (message: DatabaseMessage) => {
+			onUserAction?.();
 			await chatStore.continueAssistantMessage(message.id);
 			refreshAllMessages();
 		},
 
-		copy: async (message: DatabaseMessage, contentOverride?: string) => {
+		copy: async (message: DatabaseMessage) => {
 			const asPlainText = Boolean(currentConfig.copyTextAttachmentsAsPlainText);
 			const clipboardContent = formatMessageForClipboard(
-				contentOverride ?? message.content,
+				message.content,
 				message.extra,
 				asPlainText
 			);
@@ -50,9 +50,9 @@
 			newContent: string,
 			newExtras?: DatabaseMessageExtra[]
 		) => {
-			// in-place edit: the store already updated activeMessages and no
-			// branch is created, so sibling info stays valid without a refetch
+			onUserAction?.();
 			await chatStore.editUserMessagePreserveResponses(message.id, newContent, newExtras);
+			refreshAllMessages();
 		},
 
 		editWithBranching: async (
@@ -60,6 +60,7 @@
 			newContent: string,
 			newExtras?: DatabaseMessageExtra[]
 		) => {
+			onUserAction?.();
 			await chatStore.editMessageWithBranching(message.id, newContent, newExtras);
 			refreshAllMessages();
 		},
@@ -69,11 +70,9 @@
 			newContent: string,
 			shouldBranch: boolean
 		) => {
+			onUserAction?.();
 			await chatStore.editAssistantMessage(message.id, newContent, shouldBranch);
-
-			// only a branch changes sibling info; an in-place edit already
-			// landed in activeMessages
-			if (shouldBranch) refreshAllMessages();
+			refreshAllMessages();
 		},
 
 		forkConversation: async (
@@ -87,12 +86,8 @@
 			await conversationsStore.navigateToSibling(siblingId);
 		},
 
-		regenerateCompaction: async (message: DatabaseMessage) => {
-			await chatStore.regenerateCompaction(message.id);
-			refreshAllMessages();
-		},
-
 		regenerateWithBranching: async (message: DatabaseMessage, modelOverride?: string) => {
+			onUserAction?.();
 			await chatStore.regenerateMessageWithBranching(message.id, modelOverride);
 			refreshAllMessages();
 		}
@@ -102,17 +97,9 @@
 		const conversation = conversationsStore.activeConversation;
 
 		if (conversation) {
-			// reuse the array loadConversation just read, when present; branch
-			// actions fall through to a fresh fetch
-			const preloaded = conversationsStore.consumeLastLoadedMessages(conversation.id);
-
-			if (preloaded) {
-				allConversationMessages = preloaded;
-			} else {
-				conversationsStore.getConversationMessages(conversation.id).then((messages) => {
-					allConversationMessages = messages;
-				});
-			}
+			conversationsStore.getConversationMessages(conversation.id).then((messages) => {
+				allConversationMessages = messages;
+			});
 		} else {
 			allConversationMessages = [];
 		}
@@ -237,77 +224,48 @@
 	});
 </script>
 
-<!-- Re-created per conversation, so each one starts from fresh rows that
-     mount eagerly at its bottom. -->
-{#key conversationsStore.activeConversation?.id ?? 'new'}
-	<div class="chat-messages">
-		{#each displayMessages as { isLastAssistantMessage, isLastUserMessage, message, nextAssistantMessage, siblingInfo, toolMessages }, index (message.id)}
-			<LazyChatMessage
-				{chatActions}
-				class="mx-auto mt-12 w-full max-w-3xl"
-				eager={index >= displayMessages.length - LANDING_EAGER_ROWS}
-				{isLastAssistantMessage}
-				{isLastUserMessage}
-				{message}
-				{nextAssistantMessage}
-				{siblingInfo}
-				{toolMessages}
+<div>
+	{#each displayMessages as { isLastAssistantMessage, isLastUserMessage, message, nextAssistantMessage, siblingInfo, toolMessages } (message.id)}
+		<ChatMessage
+			{chatActions}
+			class="mx-auto mt-12 w-full max-w-3xl"
+			{isLastAssistantMessage}
+			{isLastUserMessage}
+			{message}
+			{nextAssistantMessage}
+			{siblingInfo}
+			{toolMessages}
+		/>
+	{/each}
+
+	{#if conversationsStore.activeConversation && agenticStore.getPendingSteeringMessageContent(conversationsStore.activeConversation!.id)}
+		{@const convId = conversationsStore.activeConversation!.id}
+		{@const pendingContent = agenticStore.getPendingSteeringMessageContent(convId)}
+
+		{#if pendingContent}
+			<ChatMessageUserPending
+				class="mx-auto mt-12 w-full max-w-[48rem]"
+				content={pendingContent}
+				extras={agenticStore.getPendingSteeringMessageExtras(convId)}
+				onDelete={() => agenticStore.clearSteeringMessage(convId)}
+				onEdit={(newContent, extras) =>
+					agenticStore.injectSteeringMessage(convId, newContent, extras)}
+				onSendImmediately={() => chatStore.abortCurrentFlow(convId)}
 			/>
-		{/each}
-
-		{#if conversationsStore.activeConversation && agenticStore.getPendingSteeringMessageContent(conversationsStore.activeConversation!.id)}
-			{@const convId = conversationsStore.activeConversation!.id}
-			{@const pendingContent = agenticStore.getPendingSteeringMessageContent(convId)}
-
-			{#if pendingContent}
-				<ChatMessageUserPending
-					class="mx-auto mt-12 w-full max-w-[48rem]"
-					content={pendingContent}
-					extras={agenticStore.getPendingSteeringMessageExtras(convId)}
-					onDelete={() => agenticStore.clearSteeringMessage(convId)}
-					onEdit={(newContent, extras) =>
-						agenticStore.injectSteeringMessage(convId, newContent, extras)}
-					onSendImmediately={() => chatStore.abortCurrentFlow(convId)}
-				/>
-			{/if}
-		{:else if conversationsStore.activeConversation && chatStore.getPendingMessageContent(conversationsStore.activeConversation!.id)}
-			{@const convId = conversationsStore.activeConversation!.id}
-			{@const pendingContent = chatStore.getPendingMessageContent(convId)}
-
-			{#if pendingContent}
-				<ChatMessageUserPending
-					class="mx-auto mt-12 w-full max-w-[48rem]"
-					content={pendingContent}
-					extras={chatStore.getPendingMessageExtras(convId)}
-					onDelete={() => chatStore.clearPendingMessage(convId)}
-					onEdit={(newContent, extras) =>
-						chatStore.injectPendingMessage(convId, newContent, extras)}
-					onSendImmediately={() => chatStore.abortCurrentFlow(convId)}
-				/>
-			{/if}
 		{/if}
-	</div>
-{/key}
+	{:else if conversationsStore.activeConversation && chatStore.getPendingMessageContent(conversationsStore.activeConversation!.id)}
+		{@const convId = conversationsStore.activeConversation!.id}
+		{@const pendingContent = chatStore.getPendingMessageContent(convId)}
 
-<style>
-	/* Compositor-friendly opacity fade; the keyed block re-creates the list per
-	 * conversation, so the animation plays on every navigation into a chat. */
-	.chat-messages {
-		animation: chat-messages-fade-in 150ms ease-out;
-	}
-
-	@keyframes chat-messages-fade-in {
-		from {
-			opacity: 0;
-		}
-		to {
-			opacity: 1;
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.chat-messages {
-			animation: none;
-		}
-	}
-</style>
+		{#if pendingContent}
+			<ChatMessageUserPending
+				class="mx-auto mt-12 w-full max-w-[48rem]"
+				content={pendingContent}
+				extras={chatStore.getPendingMessageExtras(convId)}
+				onDelete={() => chatStore.clearPendingMessage(convId)}
+				onEdit={(newContent, extras) => chatStore.injectPendingMessage(convId, newContent, extras)}
+				onSendImmediately={() => chatStore.abortCurrentFlow(convId)}
+			/>
+		{/if}
+	{/if}
+</div>

@@ -74,9 +74,6 @@ static inline ggml_tensor * llama_mul_mat_hadamard(
     return res;
 }
 
-// Prefetch the host pages needed to gather these rows.
-void llama_prefetch_rows(const ggml_tensor * tensor, const int32_t * rows, size_t n_rows);
-
 struct time_meas {
     time_meas(int64_t & t_acc, bool disable = false);
     ~time_meas();
@@ -96,8 +93,6 @@ struct buffer_view {
     }
 };
 
-void llama_clear_tensor_data(ggml_tensor * t, size_t offset, size_t size);
-
 void replace_all(std::string & s, const std::string & search, const std::string & replace);
 
 // TODO: rename to llama_format ?
@@ -107,5 +102,4 @@ std::string format(const char * fmt, ...);
 std::string llama_format_tensor_shape(const std::vector<int64_t> & ne);
 std::string llama_format_tensor_shape(const struct ggml_tensor * t);
 
-// arrays are rendered only until the result is longer than max_len
-std::string gguf_kv_to_str(const struct gguf_context * ctx_gguf, int i, size_t max_len = SIZE_MAX);
+std::string gguf_kv_to_str(const struct gguf_context * ctx_gguf, int i);

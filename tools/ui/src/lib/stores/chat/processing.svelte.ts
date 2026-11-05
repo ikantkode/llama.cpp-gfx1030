@@ -8,6 +8,7 @@
  * Composed under chatStore.processing; not exported from the stores barrel.
  */
 
+import { MessageRole } from '$lib/enums';
 // direct imports between stores, not via the barrel, to avoid circular deps
 import { modelsStore } from '$lib/stores/models/index.svelte';
 import { serverStore } from '$lib/stores/server.svelte';
@@ -18,7 +19,6 @@ import type {
 	ChatMessageTimings,
 	DatabaseMessage
 } from '$lib/types';
-import { lastContextBearingMessage } from '$lib/utils/compaction';
 import { SvelteMap } from 'svelte/reactivity';
 
 interface ProcessingTimingData {
@@ -79,27 +79,27 @@ export class ChatProcessingStore {
 	}
 
 	restoreFromMessages(messages: DatabaseMessage[], conversationId: string): void {
-		// The same source of truth as the context gauge: a stamped compaction
-		// node supersedes earlier assistant turns and restores to an idle
-		// state (predicted_n is 0), so the reduced context is never
-		// overridden by pre-compaction numbers.
-		const message = lastContextBearingMessage(messages);
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const message = messages[i];
 
-		if (!message?.timings) return;
+			if (message.role === MessageRole.ASSISTANT && message.timings) {
+				this.setState(
+					conversationId,
+					this.parseTimingData({
+						cache_n: message.timings.cache_n || 0,
+						predicted_n: message.timings.predicted_n || 0,
+						predicted_per_second:
+							message.timings.predicted_n && message.timings.predicted_ms
+								? (message.timings.predicted_n / message.timings.predicted_ms) * 1000
+								: 0,
+						prompt_ms: message.timings.prompt_ms,
+						prompt_n: message.timings.prompt_n || 0
+					})
+				);
 
-		this.setState(
-			conversationId,
-			this.parseTimingData({
-				cache_n: message.timings.cache_n || 0,
-				predicted_n: message.timings.predicted_n || 0,
-				predicted_per_second:
-					message.timings.predicted_n && message.timings.predicted_ms
-						? (message.timings.predicted_n / message.timings.predicted_ms) * 1000
-						: 0,
-				prompt_ms: message.timings.prompt_ms,
-				prompt_n: message.timings.prompt_n || 0
-			})
-		);
+				return;
+			}
+		}
 	}
 
 	setActiveConversation(conversationId: string | null): void {

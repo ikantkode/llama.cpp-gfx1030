@@ -9,7 +9,6 @@
 	const calls: string[] = [];
 
 	const pickers = useChatFormPickers({
-		canCompact: () => true,
 		focusInput: () => {},
 		getCaretOffset: () => caretOffset,
 		getCwd: () => null,
@@ -19,9 +18,6 @@
 		getValue: () => value,
 		hasCwdTools: () => true,
 		hasPrompts: () => true,
-		onCompact: () => {
-			calls.push('onCompact');
-		},
 		openModelSelector: () => {
 			calls.push('openModelSelector');
 		},

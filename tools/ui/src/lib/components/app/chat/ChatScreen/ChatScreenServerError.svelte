@@ -8,7 +8,7 @@
 	let isLoadingModel = $derived(serverStore.status === 503);
 </script>
 
-{#if hasError || isLoadingModel}
+{#if hasError}
 	<div class="pointer-events-auto mx-auto mb-4 max-w-[48rem] px-1">
 		<Alert.Root variant={isLoadingModel ? 'default' : 'destructive'}>
 			{#if isLoadingModel}

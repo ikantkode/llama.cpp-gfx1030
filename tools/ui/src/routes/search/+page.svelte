@@ -2,11 +2,7 @@
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import {
-		DialogConversationDelete,
-		SearchInput,
-		SidebarNavigationSearchResults
-	} from '$lib/components/app';
+	import { SearchInput, SidebarNavigationSearchResults } from '$lib/components/app';
 	import { ROUTES } from '$lib/constants';
 	import { RouterService } from '$lib/services/router.service';
 	import { chatStore, conversationsStore, deviceStore } from '$lib/stores';
@@ -48,30 +44,18 @@
 		}
 	}
 
-	let deleteDialogOpen = $state(false);
-	let deleteTargetId = $state<string | null>(null);
-
-	function handleDeleteConversation(id: string) {
+	async function handleDeleteConversation(id: string) {
 		const conversation = conversationsStore.conversations.find((c) => c.id === id);
 
 		if (!conversation) return;
 
-		deleteTargetId = conversation.id;
-		deleteDialogOpen = true;
-	}
+		const confirmed = window.confirm(
+			`Delete "${conversation.name}"? This action cannot be undone.`
+		);
 
-	async function handleDeleteConfirm() {
-		const id = deleteTargetId;
-
-		deleteDialogOpen = false;
-
-		if (!id) return;
+		if (!confirmed) return;
 
 		await conversationsStore.deleteConversation(id, { deleteWithForks: false });
-	}
-
-	function handleDeleteCancel() {
-		deleteDialogOpen = false;
 	}
 
 	function handleStopGeneration(id: string) {
@@ -112,9 +96,3 @@
 		{searchQuery}
 	/>
 </div>
-
-<DialogConversationDelete
-	bind:open={deleteDialogOpen}
-	onCancel={handleDeleteCancel}
-	onConfirm={handleDeleteConfirm}
-/>

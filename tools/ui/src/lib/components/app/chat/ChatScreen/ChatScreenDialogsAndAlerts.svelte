@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { Trash2 } from '@lucide/svelte';
 	import {
 		DialogChatError,
-		DialogConversationDelete,
+		DialogConfirmation,
 		DialogEmptyFileAlert,
 		DialogFileUploadError
 	} from '$lib/components/app';
@@ -23,10 +24,16 @@
 	fileErrorData={fileUpload.fileErrorData}
 />
 
-<DialogConversationDelete
+<DialogConfirmation
 	bind:open={showDeleteDialog}
+	cancelText="Cancel"
+	confirmText="Delete"
+	description="Are you sure you want to delete this conversation? This action cannot be undone and will permanently remove all messages in this conversation."
+	icon={Trash2}
 	onCancel={() => (showDeleteDialog = false)}
 	onConfirm={handleDeleteConfirm}
+	title="Delete Conversation"
+	variant="destructive"
 />
 
 <DialogEmptyFileAlert

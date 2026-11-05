@@ -10,10 +10,11 @@
 	import Label from '$lib/components/ui/label/label.svelte';
 	import { Switch } from '$lib/components/ui/switch';
 	import { getChatMessageActionsContext, getChatMessageEditContext } from '$lib/contexts';
+	import { MessageRole } from '$lib/enums';
 	import { conversationsStore } from '$lib/stores';
-	import { untrack } from 'svelte';
 
 	interface Props {
+		role: MessageRole.USER | MessageRole.ASSISTANT;
 		justify: 'start' | 'end';
 		actionsPosition: 'left' | 'right';
 		onRegenerate?: () => void;
@@ -30,12 +31,14 @@
 		onRawOutputToggle,
 		onRegenerate,
 		rawOutputEnabled = false,
+		role,
 		showRawOutputSwitch = false
 	}: Props = $props();
 
 	const messageActions = getChatMessageActionsContext();
 	const editCtx = getChatMessageEditContext();
 
+	let showForkDialog = $state(false);
 	let forkName = $state('');
 	let forkIncludeAttachments = $state(true);
 
@@ -44,23 +47,20 @@
 		messageActions.setShowDeleteDialog(false);
 	}
 
-	// fills the fork form each time the dialog opens, from the icon or the
-	// message's context menu
-	$effect(() => {
-		if (!messageActions.showForkDialog) return;
+	function handleOpenForkDialog() {
+		const conv = conversationsStore.activeConversation;
 
-		untrack(() => {
-			forkName = `Fork of ${conversationsStore.activeConversation?.name ?? 'Conversation'}`;
-			forkIncludeAttachments = true;
-		});
-	});
+		forkName = `Fork of ${conv?.name ?? 'Conversation'}`;
+		forkIncludeAttachments = true;
+		showForkDialog = true;
+	}
 
 	function handleConfirmFork() {
 		messageActions.forkConversation?.({
 			includeAttachments: forkIncludeAttachments,
 			name: forkName.trim()
 		});
-		messageActions.setShowForkDialog(false);
+		showForkDialog = false;
 	}
 </script>
 
@@ -81,20 +81,16 @@
 
 			<ActionIcon icon={Edit} onclick={editCtx.startEdit} tooltip="Edit" />
 
-			{#if onRegenerate}
+			{#if role === MessageRole.ASSISTANT && onRegenerate}
 				<ActionIcon icon={RefreshCw} onclick={() => onRegenerate()} tooltip="Regenerate" />
 			{/if}
 
-			{#if onContinue}
+			{#if role === MessageRole.ASSISTANT && onContinue}
 				<ActionIcon icon={ArrowRight} onclick={onContinue} tooltip="Continue" />
 			{/if}
 
 			{#if messageActions.forkConversation}
-				<ActionIcon
-					icon={GitBranch}
-					onclick={() => messageActions.setShowForkDialog(true)}
-					tooltip="Fork conversation"
-				/>
+				<ActionIcon icon={GitBranch} onclick={handleOpenForkDialog} tooltip="Fork conversation" />
 			{/if}
 
 			<ActionIcon icon={Trash2} onclick={messageActions.requestDelete} tooltip="Delete" />
@@ -130,13 +126,13 @@
 />
 
 <DialogConfirmation
+	bind:open={showForkDialog}
 	cancelText="Cancel"
 	confirmText="Fork"
 	description="Create a new conversation branching from this message."
 	icon={GitBranch}
-	onCancel={() => messageActions.setShowForkDialog(false)}
+	onCancel={() => (showForkDialog = false)}
 	onConfirm={handleConfirmFork}
-	open={messageActions.showForkDialog}
 	title="Fork Conversation"
 >
 	<div class="flex flex-col gap-4 py-2">

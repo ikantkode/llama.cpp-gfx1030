@@ -4,15 +4,14 @@ import { KeyboardKey } from '$lib/enums';
 import { conversationsStore, settingsStore, tabsStore } from '$lib/stores';
 
 interface KeyboardShortcutsCallbacks {
+	activateSearchMode?: () => void;
 	editActiveConversation?: () => void;
+	onSearchActivated?: () => void;
 	deleteActiveConversation?: () => void;
 	navigateToPrevConversation?: () => void;
 	navigateToNextConversation?: () => void;
 	navigateToPrevTab?: () => void;
 	navigateToNextTab?: () => void;
-	openModelsManager?: () => void;
-	openSearch?: () => void;
-	openSettings?: () => void;
 	toggleSidebar?: () => void;
 }
 
@@ -22,12 +21,8 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutsCallbacks) {
 
 		if (isCmdOrCtrl && event.key === KeyboardKey.K_LOWER) {
 			event.preventDefault();
-			callbacks.openSearch?.();
-		}
-
-		if (isCmdOrCtrl && event.key === KeyboardKey.COMMA) {
-			event.preventDefault();
-			callbacks.openSettings?.();
+			callbacks.activateSearchMode?.();
+			callbacks.onSearchActivated?.();
 		}
 
 		if (isCmdOrCtrl && event.key === KeyboardKey.B_LOWER) {
@@ -43,15 +38,6 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutsCallbacks) {
 			event.preventDefault();
 
 			void conversationsStore.openNewChat();
-		}
-
-		if (
-			isCmdOrCtrl &&
-			event.shiftKey &&
-			(event.key === KeyboardKey.M_LOWER || event.key === KeyboardKey.M_UPPER)
-		) {
-			event.preventDefault();
-			callbacks.openModelsManager?.();
 		}
 
 		if (event.shiftKey && isCmdOrCtrl && event.key === KeyboardKey.E_UPPER) {
@@ -77,7 +63,7 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutsCallbacks) {
 				page.params.id ?? (page.route.id === '/(chat)' ? NEW_CHAT_TAB_ID : undefined);
 
 			if (activeId) {
-				void tabsStore.close(activeId, true);
+				void tabsStore.close(activeId, activeId);
 			}
 		}
 

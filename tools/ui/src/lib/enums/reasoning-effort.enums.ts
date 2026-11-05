@@ -1,6 +1,6 @@
 /**
  * Reasoning effort levels for thinking models.
- * A level the chat template honors is sent as reasoning_effort, the others map to token budgets.
+ * These values are sent to the server and mapped to token budgets.
  */
 export enum ReasoningEffort {
 	DEFAULT = 'default',
@@ -8,7 +8,5 @@ export enum ReasoningEffort {
 	LOW = 'low',
 	MAX = 'max',
 	MEDIUM = 'medium',
-	MINIMAL = 'minimal',
-	OFF = 'off',
-	XHIGH = 'xhigh'
+	OFF = 'off'
 }

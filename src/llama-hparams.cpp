@@ -71,31 +71,6 @@ uint32_t llama_hparams::n_ff(uint32_t il) const {
     GGML_ABORT("fatal error");
 }
 
-uint32_t llama_hparams::n_ff_exp(uint32_t il) const {
-    if (il < n_layer_all) {
-        return n_ff_exp_arr[il];
-    }
-
-    GGML_ABORT("fatal error");
-}
-
-uint32_t llama_hparams::n_expert_used(uint32_t il) const {
-    if (il < n_layer_all) {
-        return n_expert_used_arr[il];
-    }
-
-    GGML_ABORT("fatal error");
-}
-
-uint32_t llama_hparams::n_expert_used_max() const {
-    uint32_t val = 0;
-    for (uint32_t il = 0; il < n_layer_all; ++il) {
-        val = std::max(val, n_expert_used(il));
-    }
-
-    return val;
-}
-
 uint32_t llama_hparams::n_gqa(uint32_t il) const {
     const uint32_t n_head    = this->n_head(il);
     const uint32_t n_head_kv = this->n_head_kv(il);
@@ -283,8 +258,7 @@ bool llama_hparams::is_ple(uint32_t il) const {
 }
 
 uint32_t llama_hparams::n_pos_per_embd() const {
-    return (rope_type == LLAMA_ROPE_TYPE_MROPE || rope_type == LLAMA_ROPE_TYPE_IMROPE)
-            ? GGML_MROPE_SECTIONS : 1;
+    return rope_type == LLAMA_ROPE_TYPE_MROPE || rope_type == LLAMA_ROPE_TYPE_IMROPE ? 4 : 1;
 }
 
 bool llama_hparams::is_swa(uint32_t il) const {
@@ -319,15 +293,16 @@ uint32_t llama_hparams::n_embd_head_v_mla() const {
 }
 
 bool llama_hparams::has_kv(uint32_t il) const {
-    return kv_source(il) == il;
-}
+    if (n_layer_kv_from_start >= 0) {
+        if (il < (uint32_t) n_layer_kv_from_start) {
+            return true;
+        }
 
-uint32_t llama_hparams::kv_source(uint32_t il) const {
-    if (il < n_layer_all) {
-        return kv_source_impl[il];
+        return false;
     }
 
-    GGML_ABORT("%s: il (%u) out of bounds (n_layer_all: %u)\n", __func__, il, n_layer_all);
+    // by default, all layers have kv
+    return true;
 }
 
 bool llama_hparams::has_rope(uint32_t il) const {

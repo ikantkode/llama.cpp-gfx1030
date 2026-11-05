@@ -2,7 +2,6 @@
 	import { McpLogo } from '$lib/components/app';
 	import { SettingsMcpServers } from '$lib/components/app/settings';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { deviceStore } from '$lib/stores';
 
 	interface Props {
 		open?: boolean;
@@ -19,8 +18,7 @@
 
 <Dialog.Root onOpenChange={handleOpenChange} {open}>
 	<Dialog.Content
-		class="max-md:h-[100dvh]! max-md:w-screen! max-md:max-w-none! max-md:rounded-none! max-md:border-0! md:h-[calc(100vh-4rem)]! md:max-h-240! md:w-[calc(100vw-4rem)]! md:max-w-360! flex flex-col p-4"
-		onOpenAutoFocus={(event) => deviceStore.isMobile && event.preventDefault()}
+		class="md:h-[calc(100vh-4rem)]! md:max-h-240! md:w-[calc(100vw-4rem)]! md:max-w-360! flex flex-col"
 	>
 		<Dialog.Header>
 			<Dialog.Title class="flex items-center gap-2">

@@ -7,7 +7,6 @@
 	import { mcpStore } from '$lib/stores';
 	import type { AgenticSection, SearchResult } from '$lib/types';
 	import {
-		buildProxiedIconUrl,
 		extractSearchQuery,
 		extractSearchResults,
 		faviconForUrl,
@@ -83,7 +82,7 @@
 </script>
 
 {#snippet pill(result: SearchResult)}
-	{@const faviconUrl = buildProxiedIconUrl(faviconForUrl(result.url), mcpStore.isProxyAvailable)}
+	{@const faviconUrl = faviconForUrl(result.url)}
 	{@const safeUrl = sanitizeExternalUrl(result.url)}
 	{@const showHoverCard = safeUrl !== null && hasDetails(result)}
 	{#if safeUrl}
@@ -111,8 +110,13 @@
 			{#if showHoverCard}
 				{@const publishDate = formatPublishDate(result.published)}
 				{@const host = hostFor(safeUrl)}
-				<HoverCard.Content align="start" class="w-80 max-w-[90vw]" side="top" sideOffset={6}>
-					<div class="flex flex-col gap-2 px-2 py-1.5">
+				<HoverCard.Content
+					align="start"
+					class="bg-popover text-popover-foreground z-50 w-80 max-w-[90vw] rounded-lg border p-0 shadow-lg"
+					side="top"
+					sideOffset={6}
+				>
+					<div class="flex flex-col gap-2 p-3">
 						<a
 							class="line-clamp-3 text-sm font-medium leading-snug hover:underline"
 							href={safeUrl}

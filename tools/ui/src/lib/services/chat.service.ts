@@ -15,6 +15,7 @@ import {
 	CONTROL_ACTION,
 	HEADERS,
 	LEGACY_AGENTIC_REGEX,
+	REASONING_EFFORT_TOKENS,
 	SETTINGS_KEYS,
 	SSE_DATA_PREFIX,
 	SSE_DONE_MARKER,
@@ -40,7 +41,6 @@ import type {
 	ApiChatMessageData,
 	ApiStreamSession
 } from '$lib/types/api';
-import type { OpenAIToolDefinition } from '$lib/types/mcp';
 import { isAbortError } from '$lib/utils/abort';
 import { ApiError } from '$lib/utils/api-fetch';
 import { getAuthHeaders, getJsonHeaders } from '$lib/utils/api-headers';
@@ -432,8 +432,7 @@ export class ChatService {
 			response: string,
 			reasoningContent?: string,
 			timings?: ChatMessageTimings,
-			toolCalls?: string,
-			finishReason?: string
+			toolCalls?: string
 		) => void,
 		onError?: (error: Error) => void,
 		onReasoningChunk?: (chunk: string) => void,
@@ -477,8 +476,6 @@ export class ChatService {
 		let fullReasoningContent = '';
 		let aggregatedToolCalls: ApiChatCompletionToolCall[] = [];
 		let lastTimings: ChatMessageTimings | undefined;
-		// why the model stopped, length once the output limit cut the answer
-		let finishReason: string | undefined;
 		let streamFinished = false;
 		let modelEmitted = false;
 		let idEmitted = false;
@@ -628,9 +625,6 @@ export class ChatService {
 							try {
 								const parsed: ApiChatCompletionStreamChunk = JSON.parse(data);
 								const choice = parsed.choices?.[0];
-
-								if (choice?.finish_reason) finishReason = choice.finish_reason;
-
 								const content = choice?.delta?.content;
 								const reasoningContent = choice?.delta?.reasoning_content;
 								const toolCalls = choice?.delta?.tool_calls;
@@ -759,8 +753,7 @@ export class ChatService {
 					aggregatedContent,
 					fullReasoningContent || undefined,
 					lastTimings,
-					finalToolCalls,
-					finishReason
+					finalToolCalls
 				);
 			}
 		} catch (error) {
@@ -842,16 +835,14 @@ export class ChatService {
 	/**
 	 * Fire-and-forget request to pre-encode the conversation in the server's KV cache.
 	 * Re-submits the full conversation with n_predict=0 so the server processes the prompt
-	 * without generating tokens, warming the cache for the next turn. The tools the next
-	 * turn offers render ahead of the messages, so they go along to warm that very prefix.
+	 * without generating tokens, warming the cache for the next turn.
 	 */
 	static async preEncode(
 		messages: ApiChatMessageData[] | (DatabaseMessage & { extra?: DatabaseMessageExtra[] })[],
 		model?: string | null,
 		excludeReasoning?: boolean,
-		signal?: AbortSignal,
-		tools?: OpenAIToolDefinition[]
-	): Promise<ChatMessageTimings | null> {
+		signal?: AbortSignal
+	): Promise<void> {
 		const normalizedMessages: ApiChatMessageData[] =
 			await ChatService.normalizeMessagesForApi(messages);
 		const requestBody: Record<string, unknown> = {
@@ -870,8 +861,7 @@ export class ChatService {
 				return mapped;
 			}),
 			n_predict: 0,
-			stream: false,
-			tools: tools && tools.length > 0 ? tools : undefined
+			stream: false
 		};
 
 		if (model) {
@@ -879,38 +869,17 @@ export class ChatService {
 		}
 
 		try {
-			const response = await fetch(API_CHAT.COMPLETIONS, {
+			await fetch(API_CHAT.COMPLETIONS, {
 				body: JSON.stringify(requestBody),
 				headers: getJsonHeaders(),
 				method: 'POST',
 				signal
 			});
-
-			if (!response.ok) return null;
-
-			const data = await response.json();
-
-			// llama.cpp attaches a timings object with the exact fresh and
-			// cached prompt token split; usage.prompt_tokens is the
-			// OpenAI-compatible total, kept as fallback.
-			if (typeof data?.timings?.prompt_n === 'number') {
-				return {
-					cache_n: data.timings.cache_n ?? 0,
-					predicted_n: 0,
-					prompt_n: data.timings.prompt_n
-				};
-			}
-
-			if (typeof data?.usage?.prompt_tokens === 'number') {
-				return { cache_n: 0, predicted_n: 0, prompt_n: data.usage.prompt_tokens };
-			}
 		} catch (error) {
 			if (!isAbortError(error)) {
 				console.warn('[ChatService] Pre-encode request failed:', error);
 			}
 		}
-
-		return null;
 	}
 
 	// probe the resume route status without consuming the stream: the SSE route has no HEAD,
@@ -1093,7 +1062,6 @@ export class ChatService {
 			stream,
 			// Generation parameters
 			temperature,
-			thinkingBudgetTokens,
 			timings_per_token,
 			// Tools for function calling
 			tools,
@@ -1165,6 +1133,9 @@ export class ChatService {
 			? ReasoningFormat.NONE
 			: ReasoningFormat.AUTO;
 
+		const reasoningBudgetTokens =
+			enableThinking && reasoningEffort ? (REASONING_EFFORT_TOKENS[reasoningEffort] ?? -1) : -1;
+
 		// an explicit user choice injects the kwarg, otherwise it is omitted so
 		// the server default applies (--reasoning flag or chat template)
 		if (enableThinking !== undefined) {
@@ -1174,12 +1145,8 @@ export class ChatService {
 			};
 		}
 
-		if (reasoningEffort) {
-			requestBody.reasoning_effort = reasoningEffort;
-		}
-
-		if (thinkingBudgetTokens !== undefined) {
-			requestBody.thinking_budget_tokens = thinkingBudgetTokens;
+		if (reasoningBudgetTokens >= 0) {
+			requestBody.thinking_budget_tokens = reasoningBudgetTokens;
 		}
 
 		// arms the budget sampler so reasoning can be ended at runtime via the control endpoint
@@ -1480,8 +1447,7 @@ export class ChatService {
 			response: string,
 			reasoningContent?: string,
 			timings?: ChatMessageTimings,
-			toolCalls?: string,
-			finishReason?: string
+			toolCalls?: string
 		) => void,
 		onError?: (error: Error) => void,
 		onToolCallChunk?: (chunk: string) => void,
@@ -1527,13 +1493,7 @@ export class ChatService {
 				throw noResponseError;
 			}
 
-			onComplete?.(
-				content,
-				reasoningContent,
-				undefined,
-				serializedToolCalls,
-				data.choices[0]?.finish_reason ?? undefined
-			);
+			onComplete?.(content, reasoningContent, undefined, serializedToolCalls);
 
 			return content;
 		} catch (error) {
