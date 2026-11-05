@@ -92,7 +92,9 @@ llama_model_ricursive::graph::graph(const llama_model & model, const llm_graph_p
 
     auto * inp_attn = build_attn_inp_kv_iswa();
 
-    ggml_tensor * inp_out_ids = build_inp_out_ids();
+    // fork note: the last-layer out_ids slice is omitted; it crashed the
+    // scheduler (null buffer on the out_ids input at first decode) and is a
+    // pure compute optimization
 
     const float kq_scale = 1.0f / sqrtf(float(n_embd_head));
 
@@ -157,11 +159,6 @@ llama_model_ricursive::graph::graph(const llama_model & model, const llm_graph_p
             }
 
             cur = build_lora_mm(layer.wo, cur, layer.wo_s);
-        }
-
-        if (il == n_layer - 1 && inp_out_ids) {
-            cur   = ggml_get_rows(ctx0,   cur, inp_out_ids);
-            inpSA = ggml_get_rows(ctx0, inpSA, inp_out_ids);
         }
 
         cur = build_norm(cur, layer.attn_post_norm, NULL, LLM_NORM_RMS, il);
