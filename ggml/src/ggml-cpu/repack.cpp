@@ -5245,11 +5245,9 @@ ggml_backend_buffer_type_t ggml_backend_cpu_repack_buffer_type(void) {
         /* .iface    = */ {
                            /* .get_name             = */ ggml_backend_cpu_repack_buffer_type_get_name,
                            /* .alloc_buffer         = */ ggml_backend_cpu_repack_buffer_type_alloc_buffer,
-                           /* .alloc_buffer_n       = */ nullptr,
                            /* .get_alignment        = */ ggml_backend_cpu_repack_buffer_type_get_alignment,
                            /* .get_max_size         = */ nullptr,  // defaults to SIZE_MAX
                            /* .get_alloc_size       = */ nullptr,  // defaults to ggml_nbytes
-                           /* .get_alloc_size_n     = */ NULL,
                            /* .is_host              = */ nullptr,
                            },
         /* .device  = */ ggml_backend_reg_dev_get(ggml_backend_cpu_reg(), 0),

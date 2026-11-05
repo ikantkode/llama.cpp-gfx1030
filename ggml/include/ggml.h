@@ -375,6 +375,9 @@ extern "C" {
 
     // google brain half-precision bfloat16
     typedef struct { uint16_t bits; } ggml_bf16_t;
+    // upstream f8_e4m3 scalar type; fork's type ids 43-48 are its own quants, so the
+    // GGML_TYPE_F8_E4M3 enum entry sits at 49 (deviation from upstream id 43, see merge notes)
+    typedef struct { uint8_t bits; } ggml_fp8_e4m3_t;
     GGML_API ggml_bf16_t ggml_fp32_to_bf16(float);
     GGML_API float       ggml_bf16_to_fp32(ggml_bf16_t);  // consider just doing << 16
     GGML_API void        ggml_bf16_to_fp32_row(const ggml_bf16_t *, float *, int64_t);
@@ -438,7 +441,8 @@ extern "C" {
         GGML_TYPE_Q3_1    = 46,
         GGML_TYPE_Q2_0S   = 47,
         GGML_TYPE_Q2_1    = 48,
-        GGML_TYPE_COUNT   = 49,
+        GGML_TYPE_F8_E4M3 = 49, // upstream uses 43; fork ids 43-48 are taken by fork quants
+        GGML_TYPE_COUNT   = 50,
     };
 
     // precision
@@ -499,6 +503,7 @@ extern "C" {
         GGML_FTYPE_MOSTLY_NVFP4   = 26, // except 1d tensors
         GGML_FTYPE_MOSTLY_Q1_0    = 27, // except 1d tensors
         GGML_FTYPE_MOSTLY_Q2_0    = 28, // except 1d tensors
+        GGML_FTYPE_MOSTLY_F8_E4M3 = 29, // except 1d tensors
     };
 
     // available tensor operations:
