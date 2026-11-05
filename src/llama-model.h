@@ -297,6 +297,8 @@ struct llama_layer {
     struct ggml_tensor * wv_enc    = nullptr;
     struct ggml_tensor * wo_enc    = nullptr;
     struct ggml_tensor * wqkv_gate = nullptr;
+n    // value residual mix (ricursive)
+    struct ggml_tensor * attn_vres_lambda = nullptr;
 
     // relative position bias
     struct ggml_tensor * attn_rel_b       = nullptr;
