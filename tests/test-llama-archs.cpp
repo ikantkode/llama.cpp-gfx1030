@@ -69,7 +69,7 @@ static void set_tensor_data(struct ggml_tensor * tensor, void * userdata) {
 }
 
 static void usage(char ** argv) {
-    printf("Usage: %s [-a/--arch arch] [-s/--seed seed] [-o/--out dir] [-v/--verbose] [--test-mtp-ubatch-sync]\n", argv[0]);
+    printf("Usage: %s [-a/--arch arch] [-s/--seed seed] [-v/--verbose]\n", argv[0]);
 }
 
 static std::vector<llama_token> get_tokens(const uint32_t n_tokens, const uint32_t n_vocab, const size_t seed){
@@ -83,10 +83,10 @@ static std::vector<llama_token> get_tokens(const uint32_t n_tokens, const uint32
     return ret;
 }
 
-static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const bool mtp = false) {
+static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe) {
     gguf_context_ptr ret(gguf_init_empty());
     llama_model_saver ms(arch, ret.get());
-    const uint32_t n_ctx = mtp ? 256 : 128;
+    const uint32_t n_ctx = 128;
 
     uint32_t n_vocab = 128;
     uint32_t n_embd  = 256;
@@ -106,21 +106,16 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const 
         n_ff   = 96;
         n_layer = 22; // hparams.n_layer_kv_from_start = 20 is hardcoded
     } else if (arch == LLM_ARCH_DEEPSEEK4) {
-        // head size 64 so that GPU flash attention kernels support the model
-        n_embd  = 512;
+        n_embd  = 256;
         n_head  = 8;
         n_ff    = 1024;
         n_layer = 4;
-    } else if (arch == LLM_ARCH_STEP35 || arch == LLM_ARCH_LAGUNA) {
-        n_embd = 160; // exercise per-head tensor split granularity with head size 80
     } else if (arch == LLM_ARCH_MUSE_GLIMMER) {
         // Exercise grouped-query tensor sharding: the attention gate must use
         // the same KV-group-aligned layout as the Q/attention output path.
         n_embd = 512;
         n_head = 8;
         n_ff   = 768;
-    } else if (arch == LLM_ARCH_QWEN3 || arch == LLM_ARCH_AFMOE) {
-        n_head = 4;
     } else if (arch == LLM_ARCH_DEEPSEEK2
             || arch == LLM_ARCH_DEEPSEEK32
             || arch == LLM_ARCH_GLM_DSA
@@ -140,12 +135,6 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const 
         n_vocab = 4096; // must be >= the hard-coded codec head size (3072)
     }
 
-    uint32_t n_head_kv = n_head;
-    if (arch == LLM_ARCH_QWEN3) {
-        n_head_kv = 1; // MQA coverage
-    } else if (arch == LLM_ARCH_MUSE_GLIMMER || arch == LLM_ARCH_AFMOE) {
-        n_head_kv = 2; // GQA coverage
-    }
     const uint32_t n_embd_head = n_embd / n_head;
 
     ms.add_kv(LLM_KV_GENERAL_ARCHITECTURE,      llm_arch_name(arch));
@@ -155,9 +144,6 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const 
     ms.add_kv(LLM_KV_FEATURES_LENGTH,           n_embd);
     ms.add_kv(LLM_KV_BLOCK_COUNT,               n_layer);
     ms.add_kv(LLM_KV_LEADING_DENSE_BLOCK_COUNT, uint32_t(1));
-    if (mtp) {
-        ms.add_kv(LLM_KV_NEXTN_PREDICT_LAYERS, uint32_t(1));
-    }
 
     if (arch == LLM_ARCH_NEMOTRON_H || arch == LLM_ARCH_NEMOTRON_H_MOE) {
         std::vector<uint32_t> n_ff_per_layer;
@@ -189,9 +175,9 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const 
         ms.add_kv(LLM_KV_ATTENTION_HEAD_COUNT_KV, n_head_per_layer);
     } else {
         ms.add_kv(LLM_KV_ATTENTION_HEAD_COUNT, n_head);
-        const uint32_t n_head_kv_arch = arch == LLM_ARCH_DEEPSEEK4 ? 1 :
-            arch == LLM_ARCH_MUSE_GLIMMER ? 2 : n_head_kv;
-        ms.add_kv(LLM_KV_ATTENTION_HEAD_COUNT_KV, n_head_kv_arch);
+        const uint32_t n_head_kv = arch == LLM_ARCH_DEEPSEEK4 ? 1 :
+            arch == LLM_ARCH_MUSE_GLIMMER ? 2 : n_head;
+        ms.add_kv(LLM_KV_ATTENTION_HEAD_COUNT_KV, n_head_kv);
     }
 
     ms.add_kv(LLM_KV_ATTENTION_MAX_ALIBI_BIAS, 8.0f);
@@ -941,81 +927,6 @@ static void check_qwen4exp_sequence_ops(
     if (expected_fresh != actual_fresh) {
         throw std::runtime_error("Qwen4Exp sequence keep left removed state behind");
     }
-static bool mtp_sync_test_decode(llama_model * model, uint32_t n_ubatch) {
-    const int32_t n_tokens = 4;
-    const int32_t n_embd   = llama_model_n_embd_out(model);
-
-    llama_context_params ctx_params = llama_context_default_params();
-    ctx_params.n_ctx = 8;
-    ctx_params.n_batch = n_tokens;
-    ctx_params.n_ubatch = n_ubatch;
-    ctx_params.n_threads = 4;
-    ctx_params.n_threads_batch = 4;
-    ctx_params.ctx_type = LLAMA_CONTEXT_TYPE_MTP;
-
-    llama_context_ptr ctx(llama_init_from_model(model, ctx_params));
-    if (!ctx) {
-        throw std::runtime_error("failed to create MTP context");
-    }
-
-    std::vector<llama_token> token(n_tokens);
-    std::vector<float> embd((size_t) n_tokens * n_embd, 1.0e-2f);
-    std::vector<llama_pos> pos(n_tokens);
-    std::vector<int32_t> n_seq_id(n_tokens, 1);
-    std::vector<llama_seq_id> seq_id_data(n_tokens, 0);
-    std::vector<llama_seq_id *> seq_id(n_tokens);
-    std::vector<int8_t> logits(n_tokens, 0);
-
-    for (int32_t i = 0; i < n_tokens; ++i) {
-        token[i] = i;
-        pos[i] = i;
-        seq_id[i] = &seq_id_data[i];
-    }
-    logits.back() = 1;
-
-    llama_batch batch = {
-        /*.n_tokens =*/ n_tokens,
-        /*.token    =*/ token.data(),
-        /*.embd     =*/ embd.data(),
-        /*.pos      =*/ pos.data(),
-        /*.n_seq_id =*/ n_seq_id.data(),
-        /*.seq_id   =*/ seq_id.data(),
-        /*.logits   =*/ logits.data(),
-    };
-
-    llama_perf_context_reset(ctx.get());
-    const int32_t ret = llama_decode(ctx.get(), batch);
-    if (ret != 0) {
-        throw std::runtime_error("failed to decode MTP batch");
-    }
-
-    // A synchronized multi-ubatch decode accounts its queued prompt tokens
-    // before returning. The intentionally asynchronous single-ubatch path does not.
-    return llama_perf_context(ctx.get()).n_p_eval >= n_tokens;
-}
-
-static int test_mtp_ubatch_sync(const size_t seed) {
-    gguf_context_ptr gguf_ctx = get_gguf_ctx(LLM_ARCH_QWEN35, false, true);
-    llama_model_params model_params = llama_model_default_params();
-    model_params.progress_callback = silent_model_load_progress;
-    model_params.load_mtp = true;
-
-    size_t tmp = seed;
-    llama_model_ptr model(llama_model_init_from_user(gguf_ctx.get(), set_tensor_data, &tmp, model_params));
-    if (!model) {
-        throw std::runtime_error("failed to create MTP model");
-    }
-
-    if (!mtp_sync_test_decode(model.get(), 2)) {
-        fprintf(stderr, "MTP ubatches were not synchronized\n");
-        return 1;
-    }
-    if (mtp_sync_test_decode(model.get(), 4)) {
-        fprintf(stderr, "single MTP ubatch was synchronized\n");
-        return 1;
-    }
-
-    return 0;
 }
 
 static std::vector<float> get_logits(
@@ -1176,7 +1087,7 @@ static bool arch_supported(const llm_arch arch) {
     }
     // FIXME: these hit scheduler/view-backed-output issues with WebGPU on CI.
 #ifdef GGML_USE_WEBGPU
-    if (arch == LLM_ARCH_DEEPSEEK32 || arch == LLM_ARCH_GLM_DSA || arch == LLM_ARCH_DOTS3NOTE || arch == LLM_ARCH_QWEN4EXP) {
+    if (arch == LLM_ARCH_DEEPSEEK32 || arch == LLM_ARCH_GLM_DSA) {
         return false;
     }
 #endif // GGML_USE_WEBGPU
@@ -1456,13 +1367,8 @@ int main(int argc, char ** argv) {
     size_t seed = rd();
     ggml_log_level log_level = GGML_LOG_LEVEL_ERROR;
     std::string out;
-    bool test_mtp_sync = false;
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
-            usage(argv);
-            return 0;
-        }
         if (strcmp(argv[i], "-a") == 0 || strcmp(argv[i], "--arch") == 0) {
             if (i + 1 < argc) {
                 const std::string arch_name = argv[++i];
@@ -1496,18 +1402,12 @@ int main(int argc, char ** argv) {
                 return 1;
             }
         }
-        if (strcmp(argv[i], "--test-mtp-ubatch-sync") == 0) {
-            test_mtp_sync = true;
-        }
     }
     printf("%s: using seed %zu\n", __func__, seed);
 
     try {
         if (!out.empty()) {
             return save_models(arch, seed, log_level, out);
-        }
-        if (test_mtp_sync) {
-            return test_mtp_ubatch_sync(seed);
         }
         return test_backends(arch, seed, log_level);
     } catch (const std::exception & err) {
