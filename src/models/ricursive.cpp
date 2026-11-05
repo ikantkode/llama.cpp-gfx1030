@@ -18,7 +18,9 @@ void llama_model_ricursive::load_arch_hparams(llama_model_loader & ml) {
     }
     hparams.swa_type = LLAMA_SWA_TYPE_STANDARD;
     // default: every 5th layer is global (vendor layer_types); the per-layer array in the GGUF takes precedence
-    load_swa_pattern(ml, 5);
+    uint32_t swa_period = 5;
+    ml.get_key_or_arr(LLM_KV_ATTENTION_SLIDING_WINDOW_PATTERN, swa_period, false);
+    hparams.set_swa_pattern(swa_period);
 
     // the reference uses plain RoPE on the SWA layers: no rope scaling
     hparams.rope_freq_base_train_swa  = hparams.rope_freq_base_train;
