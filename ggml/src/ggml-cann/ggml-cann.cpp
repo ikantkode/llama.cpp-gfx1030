@@ -920,7 +920,7 @@ static void * ggml_backend_cann_buffer_get_base(ggml_backend_buffer_t buffer) {
  * @param dst Pointer to the destination buffer where transformed data will be
  * stored.
  */
-static void ggml_backend_cann_transform_q4_0(ggml_tensor * tensor, const void * src, void * dst) {
+static void ggml_backend_cann_transform_q4_0(const ggml_tensor * tensor, const void * src, void * dst) {
     int64_t n_elems     = ggml_nelements(tensor);
     int64_t groups      = n_elems / QK4_0;
     size_t  quant_bytes = n_elems * sizeof(uint8_t) / 2;
@@ -1014,7 +1014,7 @@ static void ggml_backend_cann_transform_back_q4_0(const ggml_tensor * tensor, vo
  * @param dst Pointer to the destination buffer where transformed data will be
  * stored.
  */
-static void ggml_backend_cann_transform_q8_0(ggml_tensor * tensor, const void * src, void * dst) {
+static void ggml_backend_cann_transform_q8_0(const ggml_tensor * tensor, const void * src, void * dst) {
     int64_t n_elems     = ggml_nelements(tensor);
     int64_t groups      = n_elems / QK8_0;
     size_t  quant_bytes = n_elems * sizeof(uint8_t);
@@ -1075,7 +1075,7 @@ static void ggml_backend_cann_transform_back_q8_0(const ggml_tensor * tensor, co
  * @param dst Pointer to the destination buffer where transformed data will be
  * stored.
  */
-static void ggml_backend_cann_transform(ggml_tensor * tensor, const void * src, void * dst) {
+static void ggml_backend_cann_transform(const ggml_tensor * tensor, const void * src, void * dst) {
     switch (tensor->type) {
         case GGML_TYPE_Q4_0:
             ggml_backend_cann_transform_q4_0(tensor, src, dst);
@@ -1478,6 +1478,9 @@ static const ggml_backend_buffer_i ggml_backend_cann_buffer_interface = {
     /* .cpy_tensor      = */ ggml_backend_cann_buffer_cpy_tensor,
     /* .clear           = */ ggml_backend_cann_buffer_clear,
     /* .reset           = */ NULL,
+    /* .set_tensor_n    = */ NULL,
+    /* .get_tensor_n    = */ NULL,
+    /* .cpy_tensor_n    = */ NULL,
 };
 
 /**
@@ -1595,12 +1598,14 @@ static bool ggml_backend_cann_buffer_type_is_host(ggml_backend_buffer_type_t buf
  * memory for CANN buffer types in the GGML backend.
  */
 static const ggml_backend_buffer_type_i ggml_backend_cann_buffer_type_interface = {
-    /* .get_name         = */ ggml_backend_cann_buffer_type_name,
-    /* .alloc_buffer     = */ ggml_backend_cann_buffer_type_alloc_buffer,
-    /* .get_alignment    = */ ggml_backend_cann_buffer_type_get_alignment,
-    /* .get_max_size     = */ NULL,  // defaults to SIZE_MAX
-    /* .get_alloc_size   = */ ggml_backend_cann_buffer_type_get_alloc_size,
-    /* .is_host          = */ ggml_backend_cann_buffer_type_is_host,
+    /* .get_name            = */ ggml_backend_cann_buffer_type_name,
+    /* .alloc_buffer        = */ ggml_backend_cann_buffer_type_alloc_buffer,
+    /* .alloc_buffer_n      = */ NULL,
+    /* .get_alignment       = */ ggml_backend_cann_buffer_type_get_alignment,
+    /* .get_max_size        = */ NULL,  // defaults to SIZE_MAX
+    /* .get_alloc_size      = */ ggml_backend_cann_buffer_type_get_alloc_size,
+    /* .get_alloc_size_n    = */ NULL,
+    /* .is_host             = */ ggml_backend_cann_buffer_type_is_host,
 };
 
 /**
@@ -1742,12 +1747,14 @@ static ggml_backend_buffer_t ggml_backend_cann_host_buffer_type_alloc_buffer(ggm
 ggml_backend_buffer_type_t ggml_backend_cann_host_buffer_type() {
     static struct ggml_backend_buffer_type ggml_backend_cann_buffer_type_host = {
         /* .iface    = */ {
-                           /* .get_name         = */ ggml_backend_cann_host_buffer_type_name,
-                           /* .alloc_buffer     = */ ggml_backend_cann_host_buffer_type_alloc_buffer,
-                           /* .get_alignment    = */ ggml_backend_cpu_buffer_type()->iface.get_alignment,
-                           /* .get_max_size     = */ NULL,  // defaults to SIZE_MAX
-            /* .get_alloc_size   = */ ggml_backend_cpu_buffer_type()->iface.get_alloc_size,
-                           /* .is_host          = */ ggml_backend_cpu_buffer_type()->iface.is_host,
+                           /* .get_name             = */ ggml_backend_cann_host_buffer_type_name,
+                           /* .alloc_buffer         = */ ggml_backend_cann_host_buffer_type_alloc_buffer,
+                           /* .alloc_buffer_n       = */ NULL,
+                           /* .get_alignment        = */ ggml_backend_cpu_buffer_type()->iface.get_alignment,
+                           /* .get_max_size         = */ NULL,  // defaults to SIZE_MAX
+                           /* .get_alloc_size       = */ ggml_backend_cpu_buffer_type()->iface.get_alloc_size,
+                           /* .get_alloc_size_n     = */ NULL,
+                           /* .is_host              = */ ggml_backend_cpu_buffer_type()->iface.is_host,
                            },
         /* .device   = */
         ggml_backend_reg_dev_get(ggml_backend_cann_reg(), 0),
@@ -1871,6 +1878,9 @@ static bool ggml_cann_compute_forward(ggml_backend_cann_context & ctx, struct gg
                     break;
                 case GGML_GLU_OP_SWIGLU:
                     ggml_cann_swiglu(ctx, dst);
+                    break;
+                case GGML_GLU_OP_SWIGLU_CLAMP:
+                    ggml_cann_swiglu_clamp(ctx, dst);
                     break;
                 case GGML_GLU_OP_GEGLU_QUICK:
                     ggml_cann_geglu_quick(ctx, dst);
@@ -2397,38 +2407,6 @@ static enum ggml_status ggml_backend_cann_graph_compute(ggml_backend_t backend, 
  * @return bool Returns true if the operation is supported by the backend,
  *              otherwise false.
  */
-static bool ggml_cann_get_rows_shapes_supported(const ggml_tensor * op) {
-    const ggml_tensor * src = op->src[0];
-    const ggml_tensor * indices = op->src[1];
-    return src != nullptr && indices != nullptr && indices->type == GGML_TYPE_I32 &&
-           src->ne[2] == indices->ne[1] && src->ne[3] == indices->ne[2] && indices->ne[3] == 1 &&
-           op->ne[0] == src->ne[0] && op->ne[1] == indices->ne[0] &&
-           op->ne[2] == indices->ne[1] && op->ne[3] == indices->ne[2] &&
-           ggml_is_contiguous_rows(src) && ggml_is_contiguous_rows(op);
-}
-
-static bool ggml_cann_set_rows_shapes_supported(const ggml_tensor * op) {
-    const ggml_tensor * src = op->src[0];
-    const ggml_tensor * indices = op->src[1];
-    return src != nullptr && indices != nullptr && src->type == GGML_TYPE_F32 &&
-           (indices->type == GGML_TYPE_I32 || indices->type == GGML_TYPE_I64) &&
-           op->ne[0] == src->ne[0] && op->ne[2] == src->ne[2] && op->ne[3] == src->ne[3] &&
-           src->ne[1] == indices->ne[0] && indices->ne[1] > 0 && indices->ne[2] > 0 && indices->ne[3] == 1 &&
-           src->ne[2] % indices->ne[1] == 0 && src->ne[3] % indices->ne[2] == 0 &&
-           ggml_is_contiguous_rows(op) && ggml_is_contiguous_rows(src);
-}
-
-static bool ggml_cann_out_prod_shapes_supported(const ggml_tensor * op) {
-    const ggml_tensor * src0 = op->src[0];
-    const ggml_tensor * src1 = op->src[1];
-    return src0 != nullptr && src1 != nullptr && op->type == GGML_TYPE_F32 &&
-           src1->type == GGML_TYPE_F32 && src0->ne[0] == op->ne[0] &&
-           src1->ne[0] == op->ne[1] && src0->ne[1] == src1->ne[1] &&
-           src1->ne[2] == op->ne[2] && src1->ne[3] == op->ne[3] &&
-           op->ne[2] % src0->ne[2] == 0 && op->ne[3] % src0->ne[3] == 0 &&
-           ggml_is_contiguous_rows(src0) && ggml_is_contiguous_rows(op);
-}
-
 static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_tensor * op) {
     switch (op->op) {
         case GGML_OP_UNARY:
@@ -2460,6 +2438,7 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
                 case GGML_GLU_OP_SWIGLU:
                 case GGML_GLU_OP_GEGLU_ERF:
                 case GGML_GLU_OP_GEGLU_QUICK:
+                case GGML_GLU_OP_SWIGLU_CLAMP:
                     return true;
                 default:
                     return false;
@@ -2479,9 +2458,10 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
 #ifdef ASCEND_310P
                         // Q4 && Q8 per group is not support on 310p device
                         return false;
-#endif
+#else
                         // only support contiguous for quantized types.
                         return ggml_is_contiguous(op->src[0]) && ggml_is_contiguous(op->src[1]);
+#endif
                     default:
                         return false;
                 }
@@ -2496,27 +2476,16 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
 #ifdef ASCEND_310P
                     // Q4 && Q8 per group is not support on 310p device
                     return false;
-#endif
+#else
                     // only support contiguous for quantized types.
                     return ggml_is_contiguous(op->src[0]) && ggml_is_contiguous(op->src[1]);
+#endif
                 default:
                     return false;
             }
         // embedding
         case GGML_OP_GET_ROWS:
             {
-                if (!ggml_cann_get_rows_shapes_supported(op)) {
-                    return false;
-                }
-#ifdef ASCEND_310P
-                if (op->type != GGML_TYPE_F32 && op->type != GGML_TYPE_F16) {
-                    return false;
-                }
-#else
-                if (op->type != GGML_TYPE_F32 && op->type != GGML_TYPE_F16 && op->type != GGML_TYPE_BF16) {
-                    return false;
-                }
-#endif
                 switch (op->src[0]->type) {
                     case GGML_TYPE_F32:
                     case GGML_TYPE_F16:
@@ -2532,12 +2501,6 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
             break;
         case GGML_OP_SET_ROWS:
             {
-                if (op->src[3] != nullptr || op->src[4] != nullptr) {
-                    return false;
-                }
-                if (!ggml_cann_set_rows_shapes_supported(op)) {
-                    return false;
-                }
                 switch (op->type) {
                     case GGML_TYPE_F32:
                     case GGML_TYPE_F16:
@@ -2639,6 +2602,7 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
         case GGML_OP_CROSS_ENTROPY_LOSS:
         case GGML_OP_DUP:
         case GGML_OP_IM2COL:
+        case GGML_OP_CONCAT:
         case GGML_OP_REPEAT:
         case GGML_OP_NONE:
         case GGML_OP_RESHAPE:
@@ -2682,10 +2646,7 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
 #ifdef ASCEND_310P
                 // Ger is not supported on 310p device
                 return false;
-#endif
-                if (!ggml_cann_out_prod_shapes_supported(op)) {
-                    return false;
-                }
+#else
                 switch (op->src[0]->type) {
                     case GGML_TYPE_F16:
                     case GGML_TYPE_F32:
@@ -2693,17 +2654,8 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
                     default:
                         return false;
                 }
-            }
-        case GGML_OP_CONCAT:
-            if (op->src[0] == nullptr || op->src[1] == nullptr ||
-                op->src[0]->type != op->type || op->src[1]->type != op->type) {
-                return false;
-            }
-#ifdef ASCEND_310P
-            return op->type == GGML_TYPE_F32 || op->type == GGML_TYPE_F16;
-#else
-            return op->type == GGML_TYPE_F32 || op->type == GGML_TYPE_F16 || op->type == GGML_TYPE_BF16;
 #endif
+            }
         case GGML_OP_CONV_TRANSPOSE_1D:
             return true;
         case GGML_OP_SCALE:
@@ -2715,19 +2667,17 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
             if (op->src[2]) {
                 return false;
             }
-            if (op->src[0] == nullptr || op->src[0]->type != GGML_TYPE_F32 || op->type != GGML_TYPE_F32 ||
-                !ggml_is_contiguous_rows(op->src[0]) || !ggml_is_contiguous_rows(op)) {
-                return false;
-            }
-            return op->src[1] == nullptr ||
-                   ((op->src[1]->type == GGML_TYPE_F16 || op->src[1]->type == GGML_TYPE_F32) &&
-                    ggml_is_contiguous_rows(op->src[1]));
+            return true;
         case GGML_OP_FLASH_ATTN_EXT:
             {
+                // K/V row lists (ggml_flash_attn_ext_rows) are not supported
+                if (op->src[5] != nullptr) {
+                    return false;
+                }
 #ifdef ASCEND_310P
                 // FA not support on 310p device
                 return false;
-#endif
+#else
                 // derived from [ggml-cuda.cu]
                 if (op->src[1]->type != GGML_TYPE_F16 || op->src[2]->type != GGML_TYPE_F16) {
                     return false;
@@ -2753,6 +2703,7 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev, const ggml_ten
                     return false;
                 }
                 return true;
+#endif
             }
         case GGML_OP_SSM_CONV:
             return true;

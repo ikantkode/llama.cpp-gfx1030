@@ -113,6 +113,7 @@ void quantize_q3_1(device const float * src, device block_q3_1 & dst) {
     for (int j = 0; j < 4; ++j) dst.qh[j] = qh[j];
 }
 void quantize_q2_0(device const float * src, device block_q2_0 & dst) {
+#pragma METAL fp math_mode(safe)
     float amax = 0.0f;
     for (int j = 0; j < QK2_0; j++) {
         float a = fabs(src[j]);
