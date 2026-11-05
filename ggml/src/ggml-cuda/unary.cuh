@@ -130,8 +130,6 @@ __device__ __forceinline__ float ggml_cuda_op_glu_single(ggml_glu_op op, float g
             return up * ggml_cuda_op_gelu_single(gate);
         case GGML_GLU_OP_SWIGLU_OAI:
             return ggml_cuda_op_swiglu_oai_single(gate, up);
-        case GGML_GLU_OP_SWIGLU_CLAMP:
-            return ggml_cuda_op_swiglu_clamp_single(gate, up, limit);
         default:
             return up * gate;
     }
