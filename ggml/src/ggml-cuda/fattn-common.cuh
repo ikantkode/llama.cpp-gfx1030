@@ -1681,7 +1681,10 @@ void launch_fattn(
     CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&max_blocks_per_sm, fattn_kernel, block_dim.x * block_dim.y * block_dim.z, nbytes_shared));
 #if defined(GGML_USE_HIP)
     // HIP can report a false zero occupancy for the RDNA2 D=256 tile kernels even though a one-block/SM launch is valid.
-    if (max_blocks_per_sm <= 0 && GGML_CUDA_CC_IS_RDNA2(cc) && Q->ne[0] == 256 && DV == 256) {
+    // fork: RDNA2/HIP occupancy query can return 0 for the fattn tile kernels
+    // regardless of head size (previously only covered Q=DV=256 for gemma);
+    // ripple (D=128) hits the same assert. Clamp like the 256 case.
+    if (max_blocks_per_sm <= 0 && GGML_CUDA_CC_IS_RDNA2(cc)) {
         static std::once_flag warning_once;
         std::call_once(warning_once, [=]() {
             GGML_LOG_WARN(
