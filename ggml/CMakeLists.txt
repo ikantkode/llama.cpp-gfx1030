@@ -4,7 +4,7 @@ project("ggml" C CXX ASM)
 
 ### GGML Version
 set(GGML_VERSION_MAJOR 0)
-set(GGML_VERSION_MINOR 29)
+set(GGML_VERSION_MINOR 22)
 set(GGML_VERSION_PATCH 0)
 set(GGML_VERSION_BASE "${GGML_VERSION_MAJOR}.${GGML_VERSION_MINOR}.${GGML_VERSION_PATCH}")
 
@@ -197,10 +197,11 @@ set(GGML_BLAS_VENDOR ${GGML_BLAS_VENDOR_DEFAULT} CACHE STRING
 option(GGML_LLAMAFILE                       "ggml: use LLAMAFILE"                             ${GGML_LLAMAFILE_DEFAULT})
 
 option(GGML_CUDA                            "ggml: use CUDA"                                  OFF)
-set   (GGML_CUDA_CCCL_VERSION "" CACHE STRING "ggml: CCCL git tag to fetch, empty to use the version bundled with the installed CUDA Toolkit")
 option(GGML_MUSA                            "ggml: use MUSA"                                  OFF)
 option(GGML_CUDA_FORCE_MMQ                  "ggml: use mmq kernels instead of cuBLAS"         OFF)
 option(GGML_CUDA_FORCE_CUBLAS               "ggml: always use cuBLAS instead of mmq kernels"  OFF)
+set   (GGML_CUDA_PEER_MAX_BATCH_SIZE "128" CACHE STRING
+                                            "ggml: max. batch size for using peer access")
 option(GGML_CUDA_NO_PEER_COPY               "ggml: do not use peer to peer copies"            OFF)
 option(GGML_CUDA_NO_VMM                     "ggml: do not try to use CUDA VMM"                OFF)
 option(GGML_CUDA_FA                         "ggml: compile ggml FlashAttention CUDA kernels"  ON)
@@ -350,14 +351,11 @@ option(GGML_METAL_EMBED_LIBRARY             "ggml: embed Metal library"         
 set   (GGML_METAL_MACOSX_VERSION_MIN "" CACHE STRING
                                             "ggml: metal minimum macOS version")
 set   (GGML_METAL_STD "" CACHE STRING       "ggml: metal standard version (-std flag)")
-set   (GGML_METAL_TARGET_OS "macos" CACHE STRING
-                                            "ggml: metal -mtargetos OS name (macos, ios, xros, tvos)")
 option(GGML_OPENMP                          "ggml: use OpenMP"                                ON)
 option(GGML_OPENMP_FETCH                    "ggml: fetch LLVM OpenMP"                         OFF)
 option(GGML_RPC                             "ggml: use RPC"                                   OFF)
 option(GGML_SYCL                            "ggml: use SYCL"                                  OFF)
 option(GGML_SYCL_F16                        "ggml: use 16 bit floats for sycl calculations"   OFF)
-option(GGML_SYCL_SUPPORT_XMX                "ggml: build the XMX (DPAS) code paths in the SYCL backend" ON)
 option(GGML_SYCL_GRAPH                      "ggml: enable graphs in the SYCL backend"         ON)
 option(GGML_SYCL_HOST_MEM_FALLBACK          "ggml: allow host memory fallback in SYCL reorder (requires kernel 6.8+)" ON)
 option(GGML_SYCL_SUPPORT_LEVEL_ZERO_API     "ggml: use Level Zero API in SYCL backend"  ON)
@@ -515,8 +513,6 @@ write_basic_package_version_file(
     VERSION ${GGML_INSTALL_VERSION}
     COMPATIBILITY SameMajorVersion)
 
-# fork: ggml.c (fork version) still reads GGML_VERSION/GGML_COMMIT compile-time macros;
-# upstream's auto-merge dropped this block, restore it
 target_compile_definitions(ggml-base PRIVATE
     GGML_VERSION="${GGML_INSTALL_VERSION}"
     GGML_COMMIT="${GGML_BUILD_COMMIT}"
