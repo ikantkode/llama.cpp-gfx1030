@@ -367,10 +367,11 @@ int main(int argc, char ** argv) {
 
     common_prompt_checkpoint ckpt_dirty;
     ckpt_dirty.update_tgt(ctx_dirty, 0, 0);
-    if (ckpt_dirty.data_tgt != ckpt.data_tgt) {
+    if (ckpt_dirty.data_tgt.size() != ckpt.data_tgt.size() ||
+            memcmp(ckpt_dirty.data_tgt.data(), ckpt.data_tgt.data(), ckpt.data_tgt.size()) != 0) {
         const size_t n = std::min(ckpt_dirty.data_tgt.size(), ckpt.data_tgt.size());
         size_t first = 0;
-        while (first < n && ckpt_dirty.data_tgt[first] == ckpt.data_tgt[first]) {
+        while (first < n && ckpt_dirty.data_tgt.data()[first] == ckpt.data_tgt.data()[first]) {
             ++first;
         }
         fprintf(stderr, "%s : dirty state bytes mismatch at %zu (%zu != %zu bytes)\n", __func__, first,
